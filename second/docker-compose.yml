@@ -1,0 +1,42 @@
+services:
+  postgres:
+    build:
+      context: ./postgres
+    container_name: postgres18
+    restart: always
+
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_INITDB_ARGS: "--locale=ru_RU.UTF-8 --auth-host=scram-sha-256"
+
+    volumes:
+      - postgres_data:/var/lib/postgresql
+
+    ports:
+      - "5432:5432"
+ 
+  pinger:
+    build:
+      context: ./pinger
+    image: postgres-pinger:1.0
+    container_name: postgres-pinger
+    restart: always
+
+    env_file:
+      - .env
+    depends_on:
+      - postgres
+
+    command: sh -c "sleep 5 && python app.py"
+
+    volumes:
+      - pinger_logs:/app/logs
+
+volumes:
+  postgres_data:
+  pinger_logs:
+
