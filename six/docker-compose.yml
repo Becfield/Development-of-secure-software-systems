@@ -1,0 +1,96 @@
+services:
+  postgres:
+    build:
+      context: ./postgres
+    container_name: postgres18
+    restart: always
+
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_INITDB_ARGS: "--locale=ru_RU.UTF-8 --auth-host=scram-sha-256"
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - postgres_data:/var/lib/postgresql 
+
+
+  vault:
+    image: hashicorp/vault:latest
+    container_name: vault
+    restart: always
+
+    cap_add:
+      - IPC_LOCK
+
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_ROOT_TOKEN_ID}
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+
+    ports:
+      - "8200:8200"
+
+    volumes:
+      - ./vault/file:/vault/file
+      - ./vault/config:/vault/config:ro
+
+    command: server -dev -config=/vault/config/config.hcl
+
+  vault-init:
+    image: hashicorp/vault:latest
+    container_name: vault-init
+    restart: "no"
+    user: "0"
+
+    depends_on:
+      - vault
+
+    environment:
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: ${VAULT_DEV_ROOT_TOKEN_ID}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+
+    volumes:
+      - ./vault/init:/init:ro
+      - vault_creds:/vault-creds
+
+    entrypoint: ["sh", "/init/init-vault.sh"]
+
+  pinger:
+    build:
+      context: ./pinger
+    image: postgres-pinger-vault:1.0
+    container_name: postgres-pinger
+    restart: always
+
+    environment:
+      LOG_FILE: ${LOG_FILE}
+      PING_INTERVAL: ${PING_INTERVAL}
+      VAULT_ADDR: ${VAULT_ADDR}
+      VAULT_MOUNT_POINT: ${VAULT_MOUNT_POINT}
+      VAULT_SECRET_PATH: ${VAULT_SECRET_PATH}
+
+    depends_on:
+      postgres:
+        condition: service_started
+      vault:
+        condition: service_started
+      vault-init:
+        condition: service_completed_successfully
+
+    command: sh -c "sleep 5 && sh /app/start.sh"
+
+    volumes:
+      - pinger_logs:/app/logs
+      - vault_creds:/vault-creds:ro
+
+volumes:
+  postgres_data:
+  pinger_logs:
+  vault_creds:
